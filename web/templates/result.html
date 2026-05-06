@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>수강신청 설문조사 - 제출 완료</title>
+    <link rel="stylesheet" href="/public/css/main.css">
+</head>
+<body>
+    <div class="result-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>수강신청 설문조사 - 제출 완료</h1>
+                <div class="student-info">
+                    <span id="studentName">-</span> (<span id="studentId">-</span>)
+                    <span class="separator">|</span>
+                    <span id="studentMajor">-</span>
+                    <button id="logoutBtn" class="btn btn-secondary btn-sm">로그아웃</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="content">
+            <div class="result-info">
+                <div class="success-message">
+                    <svg class="success-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <h2>설문조사가 제출되었습니다</h2>
+                    <p>제출일시: <span id="submittedAt">-</span></p>
+                    <p class="notice">수정이 필요한 경우 아래 '수정하기' 버튼을 클릭하세요</p>
+                </div>
+            </div>
+
+            <!-- Submitted Selections -->
+            <section class="selection-section">
+                <div class="section-header">
+                    <h2>제출된 교과목 선택 리스트</h2>
+                    <div class="credits-info">
+                        총 학점: <span id="totalCredits">0</span>학점
+                    </div>
+                </div>
+
+                <div class="selections-wrapper" id="selectionsWrapper">
+                    <p class="no-selections">선택된 과목이 없습니다</p>
+                </div>
+
+                <div class="result-actions">
+                    <button id="editBtn" class="btn btn-primary">수정하기</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/public/js/common.js"></script>
+    <script src="/public/js/result.js"></script>
+</body>
+</html>

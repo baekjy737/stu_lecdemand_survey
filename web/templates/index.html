@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>수강신청 설문조사 - 과목 선택</title>
+    <link rel="stylesheet" href="/public/css/main.css">
+</head>
+<body>
+    <div class="main-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>수강신청 설문조사</h1>
+                <div class="student-info">
+                    <span id="studentName">-</span> (<span id="studentId">-</span>)
+                    <span class="separator">|</span>
+                    <span id="studentMajor">-</span>
+                    <button id="logoutBtn" class="btn btn-secondary btn-sm">로그아웃</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="content">
+            <!-- Course List Section -->
+            <section class="course-section">
+                <div class="section-header">
+                    <h2>개설강좌 내역</h2>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters">
+                    <div class="filter-group">
+                        <label>이수구분</label>
+                        <select id="filterDivision">
+                            <option value="">전체</option>
+                            <option value="교양">교양</option>
+                            <option value="전공필수">전공필수</option>
+                            <option value="전공선택">전공선택</option>
+                            <option value="기초필수">기초필수</option>
+                            <option value="기초선택">기초선택</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>교과분야</label>
+                        <select id="filterField">
+                            <option value="">전체</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>검색</label>
+                        <input type="text" id="searchInput" placeholder="과목명, 과목번호, 교수명">
+                    </div>
+
+                    <button id="searchBtn" class="btn btn-primary">조회</button>
+                </div>
+
+                <!-- Course Table -->
+                <div class="table-wrapper">
+                    <table class="course-table">
+                        <thead>
+                            <tr>
+                                <th>NO</th>
+                                <th>과목번호</th>
+                                <th>교과목명</th>
+                                <th>담당교수</th>
+                                <th>이수구분</th>
+                                <th>교과분야</th>
+                                <th>교과영역</th>
+                                <th>학점</th>
+                                <th>선택</th>
+                            </tr>
+                        </thead>
+                        <tbody id="courseTableBody">
+                            <tr>
+                                <td colspan="9" class="no-data">조회 버튼을 클릭하여 강좌를 검색하세요</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination" id="pagination"></div>
+            </section>
+
+            <!-- My Selections Section -->
+            <section class="selection-section">
+                <div class="section-header">
+                    <h2>나의 교과목 선택 리스트</h2>
+                    <div class="credits-info">
+                        총 학점: <span id="totalCredits">0</span> / 21학점
+                        <span class="credit-range">(최소 10학점)</span>
+                    </div>
+                </div>
+
+                <div class="selections-wrapper" id="selectionsWrapper">
+                    <p class="no-selections">선택된 과목이 없습니다</p>
+                </div>
+
+                <div class="submit-section">
+                    <button id="submitBtn" class="btn btn-primary btn-large">설문조사 완료</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Course Selection Modal -->
+    <div id="selectionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>과목 선택</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="selected-course-info" id="modalCourseInfo"></div>
+
+                <div class="form-group">
+                    <label>우선순위 선택 (1~10지망) *</label>
+                    <select id="modalPriority">
+                        <option value="">선택하세요</option>
+                        <option value="1">1지망</option>
+                        <option value="2">2지망</option>
+                        <option value="3">3지망</option>
+                        <option value="4">4지망</option>
+                        <option value="5">5지망</option>
+                        <option value="6">6지망</option>
+                        <option value="7">7지망</option>
+                        <option value="8">8지망</option>
+                        <option value="9">9지망</option>
+                        <option value="10">10지망</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>교수님 1지망 *</label>
+                    <input type="text" id="modalProf1" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label>교수님 2지망</label>
+                    <input type="text" id="modalProf2" placeholder="선택입력">
+                </div>
+
+                <div class="form-group">
+                    <label>교수님 3지망</label>
+                    <input type="text" id="modalProf3" placeholder="선택입력">
+                </div>
+
+                <div class="current-selections-preview" id="currentSelectionsPreview"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="modalConfirm" class="btn btn-primary">확인</button>
+                <button id="modalCancel" class="btn btn-secondary">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alternative Course Modal -->
+    <div id="alternativeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>대체 강의 선택</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="info-message">
+                    <strong>안내:</strong> 대체 강의는 해당 강의 대신 수강할 과목입니다.
+                    대체 강의의 우선순위가 원 강의보다 높습니다.
+                </div>
+
+                <div class="recommended-courses" id="recommendedCourses"></div>
+
+                <div class="selected-course-info" id="altModalCourseInfo"></div>
+
+                <div class="form-group">
+                    <label>대체 강의 우선순위 *</label>
+                    <select id="altModalPriority">
+                        <option value="">선택하세요</option>
+                        <option value="1">1순위</option>
+                        <option value="2">2순위</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>교수님 1지망 *</label>
+                    <input type="text" id="altModalProf1">
+                </div>
+
+                <div class="form-group">
+                    <label>교수님 2지망</label>
+                    <input type="text" id="altModalProf2" placeholder="선택입력">
+                </div>
+
+                <div class="form-group">
+                    <label>교수님 3지망</label>
+                    <input type="text" id="altModalProf3" placeholder="선택입력">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="altModalConfirm" class="btn btn-primary">확인</button>
+                <button id="altModalCancel" class="btn btn-secondary">취소</button>
+                <button id="altModalSkip" class="btn btn-tertiary">나중에 추가</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/public/js/common.js"></script>
+    <script src="/public/js/main.js"></script>
+</body>
+</html>
