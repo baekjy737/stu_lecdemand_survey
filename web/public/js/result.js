@@ -42,42 +42,50 @@ async function loadMySelections() {
 }
 
 function renderMySelections() {
-    const wrapper = document.getElementById('selectionsWrapper');
+    // Clear all cells
+    document.querySelectorAll('.selection-cell').forEach(cell => {
+        cell.innerHTML = '';
+        cell.classList.remove('has-selection');
+    });
 
     if (mySelections.length === 0) {
-        wrapper.innerHTML = '<p class="no-selections">선택된 과목이 없습니다</p>';
         return;
     }
 
-    wrapper.innerHTML = mySelections.map(sel => {
-        const alternativesHtml = (sel.alternatives || []).map(alt => `
-            <div class="selection-alternative alt-${alt.alternative_priority}">
-                <div class="alternative-label">대체 강의 ${alt.alternative_priority}순위</div>
-                <div class="selection-course">
-                    <strong>${alt.course.course_name}</strong> (${alt.course.credits}학점)
-                    <div class="selection-professors">
-                        ${alt.professor_1st}${alt.professor_2nd ? ', ' + alt.professor_2nd : ''}${alt.professor_3rd ? ', ' + alt.professor_3rd : ''}
-                    </div>
-                </div>
-            </div>
-        `).join('');
+    // Render each selection
+    mySelections.forEach(sel => {
+        const mainCell = document.querySelector(`.selection-cell[data-priority="${sel.priority}"][data-type="main"]`);
+        if (mainCell) {
+            mainCell.classList.add('has-selection');
 
-        return `
-            <div class="selection-item priority-${sel.priority}">
-                <div class="selection-header">
-                    <div class="selection-title">${sel.priority}지망</div>
-                    <div class="selection-priority">${sel.course.credits}학점</div>
+            mainCell.innerHTML = `
+                <div class="selection-content">
+                    <div class="selection-course-name">${sel.course.course_name}</div>
+                    <div class="selection-credits">${sel.course.credits}학점</div>
+                    <div class="selection-professors">${sel.professor_1st}${sel.professor_2nd ? ', ' + sel.professor_2nd : ''}${sel.professor_3rd ? ', ' + sel.professor_3rd : ''}</div>
                 </div>
-                <div class="selection-course">
-                    <strong>${sel.course.course_name}</strong> (${sel.course.course_code})
-                    <div class="selection-professors">
-                        교수: ${sel.professor_1st}${sel.professor_2nd ? ', ' + sel.professor_2nd : ''}${sel.professor_3rd ? ', ' + sel.professor_3rd : ''}
+            `;
+        }
+
+        // Render alternatives
+        const altCell = document.querySelector(`.selection-cell[data-priority="${sel.priority}"][data-type="alternative"]`);
+        if (altCell) {
+            const alternatives = sel.alternatives || [];
+            const hasAlternative = alternatives.length > 0;
+
+            if (hasAlternative) {
+                const alt = alternatives[0];
+                altCell.classList.add('has-selection');
+                altCell.innerHTML = `
+                    <div class="selection-content alternative">
+                        <div class="selection-course-name">${alt.course.course_name}</div>
+                        <div class="selection-credits">${alt.course.credits}학점</div>
+                        <div class="selection-professors">${alt.professor_1st}${alt.professor_2nd ? ', ' + alt.professor_2nd : ''}${alt.professor_3rd ? ', ' + alt.professor_3rd : ''}</div>
                     </div>
-                </div>
-                ${alternativesHtml}
-            </div>
-        `;
-    }).join('');
+                `;
+            }
+        }
+    });
 }
 
 async function reopenSurvey() {

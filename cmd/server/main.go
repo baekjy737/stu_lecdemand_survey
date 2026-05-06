@@ -36,6 +36,7 @@ func main() {
 	authHandler := api.NewAuthHandler(database)
 	courseHandler := api.NewCourseHandler(database)
 	selectionHandler := api.NewSelectionHandler(database)
+	adminHandler := api.NewAdminHandler(database)
 
 	// Setup routes
 	mux := http.NewServeMux()
@@ -59,6 +60,10 @@ func main() {
 	// NOTE: http.ServeFile redirects "/index.html" -> "/"; use ServeContent to avoid that.
 	mux.HandleFunc("/index.html", serveHTML(filepath.Join(templatesDir, "index.html")))
 	mux.HandleFunc("/result.html", serveFile(filepath.Join(templatesDir, "result.html")))
+	mux.HandleFunc("/admin.html", serveFile(filepath.Join(templatesDir, "admin.html")))
+
+	// Browser form login (sets cookie + redirects)
+	mux.HandleFunc("/login", authHandler.LoginForm)
 
 	// Browser form login (sets cookie + redirects)
 	mux.HandleFunc("/login", authHandler.LoginForm)
@@ -79,6 +84,10 @@ func main() {
 	mux.HandleFunc("/api/selections/", middleware.CORSMiddleware(middleware.AuthMiddleware(handleSelectionsWithID(selectionHandler))))
 	mux.HandleFunc("/api/submit", middleware.CORSMiddleware(middleware.AuthMiddleware(selectionHandler.Submit)))
 	mux.HandleFunc("/api/reopen", middleware.CORSMiddleware(middleware.AuthMiddleware(selectionHandler.Reopen)))
+
+	// API routes - Admin
+	mux.HandleFunc("/api/admin/export", middleware.CORSMiddleware(adminHandler.ExportResults))
+	mux.HandleFunc("/api/admin/stats", middleware.CORSMiddleware(adminHandler.GetStats))
 
 	// Start server
 	addr := ":" + *port
@@ -196,6 +205,16 @@ func handleSelectionsWithID(h *api.SelectionHandler) http.HandlerFunc {
 		if strings.HasSuffix(r.URL.Path, "/alternatives") {
 			if r.Method == http.MethodPost {
 				h.CreateAlternative(w, r)
+			} else {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
+
+		// Check if it's priority endpoint
+		if strings.HasSuffix(r.URL.Path, "/priority") {
+			if r.Method == http.MethodPut {
+				h.UpdatePriority(w, r)
 			} else {
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			}

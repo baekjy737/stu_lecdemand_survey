@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 - 설문조사 결과 다운로드</title>
+    <link rel="stylesheet" href="/public/css/main.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>📊 관리자 페이지</h1>
+            <p>수강신청 설문조사 결과 다운로드</p>
+        </div>
+
+        <div class="admin-section">
+            <div class="info-box">
+                <h3>설문조사 통계</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">전체 학생</div>
+                        <div class="stat-value" id="totalStudents">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">제출 완료</div>
+                        <div class="stat-value" id="submittedStudents">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">미제출</div>
+                        <div class="stat-value" id="unsubmittedStudents">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="download-section">
+                <h3>결과 다운로드</h3>
+                <p class="description">
+                    모든 학생의 선택 정보가 포함된 CSV 파일을 다운로드합니다.<br>
+                    파일에는 학생 정보, 우선순위별 선택 과목, 대체 강의 정보가 포함됩니다.
+                </p>
+
+                <button id="downloadBtn" class="btn btn-primary btn-large">
+                    📥 CSV 파일 다운로드
+                </button>
+
+                <div class="csv-info">
+                    <h4>CSV 파일 포함 내용:</h4>
+                    <ul>
+                        <li>학번, 이름, 전공, 부전공, 학년, 특이사항</li>
+                        <li>제출 여부</li>
+                        <li>우선순위 (1~10지망)</li>
+                        <li>선택 구분 (선택강의/대체강의)</li>
+                        <li>과목번호, 과목명, 담당교수</li>
+                        <li>교수 1~3지망</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="admin-links">
+                <a href="/login.html" class="btn btn-secondary">← 로그인 페이지로</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="/public/js/common.js"></script>
+    <script src="/public/js/admin.js"></script>
+</body>
+</html>

@@ -233,61 +233,91 @@ async function loadMySelections() {
 }
 
 function renderMySelections() {
-    const wrapper = document.getElementById('selectionsWrapper');
+    // Clear all cells
+    document.querySelectorAll('.selection-cell').forEach(cell => {
+        cell.innerHTML = '';
+        cell.classList.remove('has-selection');
+        cell.removeAttribute('draggable');
+        cell.removeAttribute('data-selection-id');
+    });
 
     if (mySelections.length === 0) {
-        wrapper.innerHTML = '<p class="no-selections">선택된 과목이 없습니다</p>';
         return;
     }
 
-    wrapper.innerHTML = mySelections.map(sel => {
-        const alternativesHtml = (sel.alternatives || []).map(alt => `
-            <div class="selection-alternative alt-${alt.alternative_priority}">
-                <div class="alternative-label">대체 강의 ${alt.alternative_priority}순위</div>
-                <div class="selection-course">
-                    <strong>${alt.course.course_name}</strong> (${alt.course.credits}학점)
-                    <div class="selection-professors">
-                        ${alt.professor_1st}${alt.professor_2nd ? ', ' + alt.professor_2nd : ''}${alt.professor_3rd ? ', ' + alt.professor_3rd : ''}
+    // Render each selection
+    mySelections.forEach(sel => {
+        const mainCell = document.querySelector(`.selection-cell[data-priority="${sel.priority}"][data-type="main"]`);
+        if (mainCell) {
+            mainCell.classList.add('has-selection');
+            mainCell.draggable = true;
+            mainCell.dataset.selectionId = sel.id;
+
+            mainCell.innerHTML = `
+                <div class="selection-content" data-selection-id="${sel.id}">
+                    <div class="selection-course-name">${sel.course.course_name}</div>
+                    <div class="selection-credits">${sel.course.credits}학점</div>
+                    <div class="selection-professors">${sel.professor_1st}${sel.professor_2nd ? ', ' + sel.professor_2nd : ''}${sel.professor_3rd ? ', ' + sel.professor_3rd : ''}</div>
+                    <div class="selection-actions-inline">
+                        <button class="btn-icon edit-selection-btn" title="수정" data-selection-id="${sel.id}">✏️</button>
+                        <button class="btn-icon delete-selection-btn" title="삭제" data-selection-id="${sel.id}">🗑️</button>
                     </div>
                 </div>
-                <div class="selection-actions">
-                    <button class="btn btn-delete btn-sm delete-selection-btn" data-selection-id="${alt.id}">삭제</button>
-                </div>
-            </div>
-        `).join('');
+            `;
+        }
 
-        const canAddAlt = !sel.alternatives || sel.alternatives.length < 2;
+        // Render alternatives
+        const altCell = document.querySelector(`.selection-cell[data-priority="${sel.priority}"][data-type="alternative"]`);
+        if (altCell) {
+            const alternatives = sel.alternatives || [];
+            const hasAlternative = alternatives.length > 0;
+            const canAddAlt = !hasAlternative;
 
-        return `
-            <div class="selection-item priority-${sel.priority}" data-selection-id="${sel.id}">
-                <div class="selection-header">
-                    <div class="selection-title">${sel.priority}지망</div>
-                    <div class="selection-priority">${sel.course.credits}학점</div>
-                </div>
-                <div class="selection-course">
-                    <strong>${sel.course.course_name}</strong> (${sel.course.course_code})
-                    <div class="selection-professors">
-                        교수: ${sel.professor_1st}${sel.professor_2nd ? ', ' + sel.professor_2nd : ''}${sel.professor_3rd ? ', ' + sel.professor_3rd : ''}
+            if (hasAlternative) {
+                const alt = alternatives[0];
+                altCell.classList.add('has-selection');
+                altCell.innerHTML = `
+                    <div class="selection-content alternative">
+                        <div class="selection-course-name">${alt.course.course_name}</div>
+                        <div class="selection-credits">${alt.course.credits}학점</div>
+                        <div class="selection-professors">${alt.professor_1st}${alt.professor_2nd ? ', ' + alt.professor_2nd : ''}${alt.professor_3rd ? ', ' + alt.professor_3rd : ''}</div>
+                        <div class="selection-actions-inline">
+                            <button class="btn-icon edit-selection-btn" title="수정" data-selection-id="${alt.id}">✏️</button>
+                            <button class="btn-icon delete-selection-btn" title="삭제" data-selection-id="${alt.id}">🗑️</button>
+                        </div>
                     </div>
-                </div>
-                ${alternativesHtml}
-                <div class="selection-actions">
-                    ${canAddAlt ? `<button class="btn btn-add-alt btn-sm add-alt-btn" data-selection-id="${sel.id}">대체 강의 추가</button>` : ''}
-                    <button class="btn btn-delete btn-sm delete-selection-btn" data-selection-id="${sel.id}">삭제</button>
-                </div>
-            </div>
-        `;
-    }).join('');
+                `;
+            } else if (canAddAlt) {
+                altCell.innerHTML = `
+                    <button class="btn-add-alt-table add-alt-btn" data-selection-id="${sel.id}">+ 대체 강의</button>
+                `;
+            }
+        }
+    });
 
-    // Add event listeners
+    // Setup event listeners
+    setupSelectionEventListeners();
+    setupDragAndDrop();
+}
+
+function setupSelectionEventListeners() {
     document.querySelectorAll('.delete-selection-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
             deleteSelection(parseInt(this.dataset.selectionId));
         });
     });
 
+    document.querySelectorAll('.edit-selection-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            openEditModal(parseInt(this.dataset.selectionId));
+        });
+    });
+
     document.querySelectorAll('.add-alt-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
             const selId = parseInt(this.dataset.selectionId);
             const sel = mySelections.find(s => s.id === selId);
             if (sel) {
@@ -295,6 +325,158 @@ function renderMySelections() {
             }
         });
     });
+}
+
+function setupDragAndDrop() {
+    const draggableCells = document.querySelectorAll('.selection-cell[draggable="true"]');
+
+    draggableCells.forEach(cell => {
+        cell.addEventListener('dragstart', handleDragStart);
+        cell.addEventListener('dragend', handleDragEnd);
+    });
+
+    const allMainCells = document.querySelectorAll('.selection-cell[data-type="main"]');
+    allMainCells.forEach(cell => {
+        cell.addEventListener('dragover', handleDragOver);
+        cell.addEventListener('drop', handleDrop);
+        cell.addEventListener('dragleave', handleDragLeave);
+    });
+}
+
+let draggedElement = null;
+let draggedSelectionId = null;
+
+function handleDragStart(e) {
+    draggedElement = this;
+    draggedSelectionId = parseInt(this.dataset.selectionId);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', this.innerHTML);
+}
+
+function handleDragEnd(e) {
+    this.classList.remove('dragging');
+    document.querySelectorAll('.selection-cell').forEach(cell => {
+        cell.classList.remove('drag-over');
+    });
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+
+    if (this !== draggedElement) {
+        this.classList.add('drag-over');
+    }
+
+    return false;
+}
+
+function handleDragLeave(e) {
+    this.classList.remove('drag-over');
+}
+
+async function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+    e.preventDefault();
+
+    this.classList.remove('drag-over');
+
+    if (this === draggedElement) {
+        return false;
+    }
+
+    const targetPriority = parseInt(this.dataset.priority);
+    const draggedSelection = mySelections.find(s => s.id === draggedSelectionId);
+
+    if (!draggedSelection) {
+        return false;
+    }
+
+    const sourcePriority = draggedSelection.priority;
+
+    // Check if target priority is occupied
+    const targetSelection = mySelections.find(s => s.priority === targetPriority);
+
+    if (targetSelection) {
+        // Swap priorities
+        await swapPriorities(draggedSelectionId, targetSelection.id, sourcePriority, targetPriority);
+    } else {
+        // Just move to empty slot
+        await updatePriority(draggedSelectionId, targetPriority);
+    }
+
+    return false;
+}
+
+async function swapPriorities(selId1, selId2, priority1, priority2) {
+    try {
+        // Temporarily set one to a high number to avoid conflict
+        await updatePriorityDirect(selId1, 999);
+        await updatePriorityDirect(selId2, priority1);
+        await updatePriorityDirect(selId1, priority2);
+
+        await loadMySelections();
+        await searchCourses();
+    } catch (error) {
+        alert('우선순위 변경 중 오류가 발생했습니다: ' + error.message);
+    }
+}
+
+async function updatePriority(selectionId, newPriority) {
+    try {
+        await updatePriorityDirect(selectionId, newPriority);
+        await loadMySelections();
+        await searchCourses();
+    } catch (error) {
+        alert('우선순위 변경 중 오류가 발생했습니다: ' + error.message);
+    }
+}
+
+async function updatePriorityDirect(selectionId, newPriority) {
+    await apiRequest(`/api/selections/${selectionId}/priority`, {
+        method: 'PUT',
+        body: JSON.stringify({ priority: newPriority }),
+    });
+}
+
+function openEditModal(selectionId) {
+    const selection = mySelections.find(s => s.id === selectionId);
+    if (!selection) {
+        const allAlternatives = mySelections.flatMap(s => s.alternatives || []);
+        const altSelection = allAlternatives.find(a => a.id === selectionId);
+        if (altSelection) {
+            openEditModalForSelection(altSelection);
+        }
+        return;
+    }
+    openEditModalForSelection(selection);
+}
+
+function openEditModalForSelection(selection) {
+    selectedCourseForModal = selection.course;
+
+    document.getElementById('modalCourseInfo').innerHTML = `
+        <strong>${selection.course.course_name}</strong>
+        <p>과목번호: ${selection.course.course_code} | 학점: ${selection.course.credits} | 담당교수: ${selection.course.professor}</p>
+    `;
+
+    document.getElementById('modalProf1').value = selection.professor_1st || selection.course.professor;
+    document.getElementById('modalProf2').value = selection.professor_2nd || '';
+    document.getElementById('modalProf3').value = selection.professor_3rd || '';
+    document.getElementById('modalPriority').value = selection.priority;
+    document.getElementById('modalPriority').disabled = true;
+
+    displayCurrentSelectionsPreview();
+
+    // Store the selection ID for updating
+    document.getElementById('modalConfirm').dataset.editingId = selection.id;
+
+    openModal('selectionModal');
 }
 
 function selectCourse(course) {
@@ -349,6 +531,7 @@ async function confirmSelection() {
     const prof1 = document.getElementById('modalProf1').value.trim();
     const prof2 = document.getElementById('modalProf2').value.trim();
     const prof3 = document.getElementById('modalProf3').value.trim();
+    const editingId = document.getElementById('modalConfirm').dataset.editingId;
 
     if (!priority) {
         alert('우선순위를 선택해주세요.');
@@ -361,20 +544,35 @@ async function confirmSelection() {
     }
 
     try {
-        await apiRequest('/api/selections', {
-            method: 'POST',
-            body: JSON.stringify({
-                course_id: selectedCourseForModal.id,
-                priority: priority,
-                professor_1st: prof1,
-                professor_2nd: prof2,
-                professor_3rd: prof3,
-            }),
-        });
+        if (editingId) {
+            // Update existing selection
+            await apiRequest(`/api/selections/${editingId}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    professor_1st: prof1,
+                    professor_2nd: prof2,
+                    professor_3rd: prof3,
+                }),
+            });
+            delete document.getElementById('modalConfirm').dataset.editingId;
+            document.getElementById('modalPriority').disabled = false;
+        } else {
+            // Create new selection
+            await apiRequest('/api/selections', {
+                method: 'POST',
+                body: JSON.stringify({
+                    course_id: selectedCourseForModal.id,
+                    priority: priority,
+                    professor_1st: prof1,
+                    professor_2nd: prof2,
+                    professor_3rd: prof3,
+                }),
+            });
+        }
 
         closeModal('selectionModal');
         await loadMySelections();
-        await searchCourses(); // Refresh to update disabled states
+        await searchCourses();
     } catch (error) {
         alert('과목 선택 중 오류가 발생했습니다: ' + error.message);
     }
@@ -460,18 +658,12 @@ function selectRecommendedAlt(course, clickedEl) {
 }
 
 async function confirmAlternative() {
-    const priority = parseInt(document.getElementById('altModalPriority').value);
     const prof1 = document.getElementById('altModalProf1').value.trim();
     const prof2 = document.getElementById('altModalProf2').value.trim();
     const prof3 = document.getElementById('altModalProf3').value.trim();
 
     if (!selectedAltCourse) {
         alert('대체 강의를 선택해주세요.');
-        return;
-    }
-
-    if (!priority) {
-        alert('대체 강의 우선순위를 선택해주세요.');
         return;
     }
 
@@ -485,7 +677,7 @@ async function confirmAlternative() {
             method: 'POST',
             body: JSON.stringify({
                 course_id: selectedAltCourse.id,
-                alternative_priority: priority,
+                alternative_priority: 1, // Always 1
                 professor_1st: prof1,
                 professor_2nd: prof2,
                 professor_3rd: prof3,

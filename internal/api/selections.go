@@ -176,9 +176,9 @@ func (h *SelectionHandler) CreateAlternative(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Validate alternative priority (1-2)
-	if req.AlternativePriority < 1 || req.AlternativePriority > 2 {
-		http.Error(w, "Alternative priority must be 1 or 2", http.StatusBadRequest)
+	// Validate alternative priority (only 1)
+	if req.AlternativePriority != 1 {
+		http.Error(w, "Alternative priority must be 1", http.StatusBadRequest)
 		return
 	}
 
@@ -225,6 +225,88 @@ func (h *SelectionHandler) CreateAlternative(w http.ResponseWriter, r *http.Requ
 		"alternative_id": selection.ID,
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// UpdatePriority updates the priority of a selection
+func (h *SelectionHandler) UpdatePriority(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	studentID, ok := middleware.GetStudentIDFromContext(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Extract selection ID from path
+	pathParts := strings.Split(r.URL.Path, "/")
+	var selectionIDStr string
+	for i, part := range pathParts {
+		if part == "selections" && i+1 < len(pathParts) {
+			selectionIDStr = pathParts[i+1]
+			break
+		}
+	}
+
+	selectionID, err := strconv.Atoi(selectionIDStr)
+	if err != nil {
+		http.Error(w, "Invalid selection ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership
+	query := `SELECT student_id, is_alternative FROM course_selections WHERE id = ?`
+	var ownerID int
+	var isAlternative bool
+	err = h.DB.DB.QueryRow(query, selectionID).Scan(&ownerID, &isAlternative)
+	if err != nil {
+		http.Error(w, "Selection not found", http.StatusNotFound)
+		return
+	}
+	if ownerID != studentID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Cannot change priority of alternatives
+	if isAlternative {
+		http.Error(w, "Cannot change priority of alternative courses", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Priority int `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate priority
+	if req.Priority < 1 || req.Priority > 10 {
+		http.Error(w, "Priority must be between 1 and 10", http.StatusBadRequest)
+		return
+	}
+
+	// Update priority
+	updateQuery := `UPDATE course_selections SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	if _, err := h.DB.DB.Exec(updateQuery, req.Priority, selectionID); err != nil {
+		http.Error(w, "Failed to update priority", http.StatusInternalServerError)
+		return
+	}
+
+	// Also update alternatives' priority
+	altUpdateQuery := `UPDATE course_selections SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE parent_selection_id = ?`
+	if _, err := h.DB.DB.Exec(altUpdateQuery, req.Priority, selectionID); err != nil {
+		http.Error(w, "Failed to update alternatives priority", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]bool{"success": true}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
