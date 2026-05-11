@@ -5,7 +5,11 @@ let allCourses = [];
 let mySelections = [];
 let selectedCourseForModal = null;
 let selectedParentSelectionForAlt = null;
+let selectedParentCourseForAlt = null;
 let selectedAltCourse = null;
+
+let altCurrentOffset = 0;
+let altCurrentTotal = 0;
 
 const PAGE_SIZE = 10;
 let currentOffset = 0;
@@ -25,7 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('studentId').textContent = currentStudent.student_id;
     document.getElementById('studentMajor').textContent = currentStudent.major || '-';
 
-    await loadCourseFilters();
+    await loadCourseFiltersInto('filterDivision', 'filterField');
 
     // Setup event listeners
     document.getElementById('logoutBtn').addEventListener('click', logout);
@@ -42,6 +46,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Modal event listeners
     setupModalListeners();
 
+    const selectionsTable = document.getElementById('selectionsTable');
+    if (selectionsTable) {
+        selectionsTable.addEventListener('click', (e) => {
+            const btn = e.target.closest('.add-alt-btn');
+            if (!btn || !selectionsTable.contains(btn)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const sid = btn.getAttribute('data-selection-id');
+            const selId = parseInt(sid, 10);
+            if (Number.isNaN(selId)) return;
+            const sel = mySelections.find(s => s.id === selId);
+            if (!sel) return;
+            openAlternativeModal(selId, sel).catch(err => {
+                alert('대체 강의 창을 열 수 없습니다: ' + (err && err.message ? err.message : String(err)));
+            });
+        });
+    }
+
     // Load initial data
     await loadMySelections();
 
@@ -49,14 +71,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     await searchCourses(true);
 });
 
-async function loadCourseFilters() {
+function getTakenCourseIds() {
+    return new Set(
+        mySelections.flatMap(sel => {
+            const ids = [sel.course_id];
+            if (sel.alternatives) {
+                ids.push(...sel.alternatives.map(alt => alt.course_id));
+            }
+            return ids;
+        })
+    );
+}
+
+async function loadCourseFiltersInto(divisionSelectId, fieldSelectId) {
     try {
         const data = await apiRequest('/api/course-filters');
         const divisions = (data.divisions || []).filter(Boolean);
         const fields = (data.fields || []).filter(Boolean);
 
-        const divisionSelect = document.getElementById('filterDivision');
-        const fieldSelect = document.getElementById('filterField');
+        const divisionSelect = document.getElementById(divisionSelectId);
+        const fieldSelect = document.getElementById(fieldSelectId);
 
         if (divisionSelect) {
             const current = divisionSelect.value;
@@ -133,16 +167,7 @@ function renderCourseTable(courses, offset = 0) {
         return;
     }
 
-    // Get selected course IDs
-    const selectedCourseIds = new Set(
-        mySelections.flatMap(sel => {
-            const ids = [sel.course_id];
-            if (sel.alternatives) {
-                ids.push(...sel.alternatives.map(alt => alt.course_id));
-            }
-            return ids;
-        })
-    );
+    const selectedCourseIds = getTakenCourseIds();
 
     tbody.innerHTML = courses.map((course, index) => {
         const isSelected = selectedCourseIds.has(course.id);
@@ -221,6 +246,159 @@ function renderPagination(total, offset, limit) {
     }
 }
 
+function resetAlternativeModalBrowseState() {
+    selectedAltCourse = null;
+    const searchIn = document.getElementById('altSearchInput');
+    if (searchIn) searchIn.value = '';
+    const picked = document.getElementById('altModalSelectedCourseInfo');
+    if (picked) picked.hidden = true;
+    const p1 = document.getElementById('altModalProf1');
+    const p2 = document.getElementById('altModalProf2');
+    const p3 = document.getElementById('altModalProf3');
+    if (p1) p1.value = '';
+    if (p2) p2.value = '';
+    if (p3) p3.value = '';
+}
+
+async function searchAltCourses(resetPage = false) {
+    const divEl = document.getElementById('altFilterDivision');
+    const fieldEl = document.getElementById('altFilterField');
+    const searchEl = document.getElementById('altSearchInput');
+    if (!divEl || !fieldEl || !searchEl) return;
+
+    if (resetPage) {
+        altCurrentOffset = 0;
+    }
+
+    const division = divEl.value;
+    const field = fieldEl.value;
+    const search = searchEl.value.trim();
+
+    const params = new URLSearchParams();
+    if (division) params.append('division', division);
+    if (field) params.append('field', field);
+    if (search) params.append('search', search);
+    params.append('limit', String(PAGE_SIZE));
+    params.append('offset', String(altCurrentOffset));
+
+    try {
+        const data = await apiRequest(`/api/courses?${params.toString()}`);
+        const courses = data.courses || [];
+        altCurrentTotal = typeof data.total === 'number' ? data.total : courses.length;
+        renderAltCourseTable(courses, altCurrentOffset);
+        renderAltPagination(altCurrentTotal, altCurrentOffset, PAGE_SIZE);
+    } catch (error) {
+        alert('강좌 조회 중 오류가 발생했습니다: ' + error.message);
+    }
+}
+
+function renderAltCourseTable(courses, offset = 0) {
+    const tbody = document.getElementById('altCourseTableBody');
+    if (!tbody) return;
+    const parentId = selectedParentCourseForAlt ? selectedParentCourseForAlt.id : -1;
+    const selectedCourseIds = getTakenCourseIds();
+
+    if (courses.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="no-data">조회 결과가 없습니다</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = courses.map((course, index) => {
+        const isTaken = selectedCourseIds.has(course.id);
+        const isParent = course.id === parentId;
+        const unavailable = isTaken || isParent;
+        const rowClass = unavailable ? 'course-disabled' : '';
+
+        return `
+            <tr class="${rowClass}">
+                <td>${offset + index + 1}</td>
+                <td>${course.course_code}</td>
+                <td>${course.course_name}</td>
+                <td>${course.professor}</td>
+                <td>${course.division || '-'}</td>
+                <td>${course.field || '-'}</td>
+                <td>${course.area || '-'}</td>
+                <td>${course.credits}</td>
+                <td>
+                    <button type="button" class="btn btn-primary btn-sm select-alt-course-btn"
+                            data-course-id="${course.id}"
+                            ${unavailable ? 'disabled' : ''}>
+                        선택
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    tbody.querySelectorAll('.select-alt-course-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (this.disabled) return;
+            const courseId = parseInt(this.dataset.courseId, 10);
+            const course = courses.find(c => c.id === courseId);
+            if (course) {
+                pickAltCourseForAlternative(course);
+            }
+        });
+    });
+}
+
+function renderAltPagination(total, offset, limit) {
+    const container = document.getElementById('altPagination');
+    if (!container) return;
+
+    if (!total || total <= limit) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const currentPage = Math.floor(offset / limit) + 1;
+    const prevDisabled = offset <= 0;
+    const nextDisabled = offset + limit >= total;
+
+    container.innerHTML = `
+        <button type="button" id="altPrevPageBtn" ${prevDisabled ? 'disabled' : ''}>이전</button>
+        <button type="button" class="active" disabled>${currentPage} / ${totalPages} (총 ${total}개)</button>
+        <button type="button" id="altNextPageBtn" ${nextDisabled ? 'disabled' : ''}>다음</button>
+    `;
+
+    const prevBtn = document.getElementById('altPrevPageBtn');
+    const nextBtn = document.getElementById('altNextPageBtn');
+
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            altCurrentOffset = Math.max(0, altCurrentOffset - limit);
+            searchAltCourses(false);
+        });
+    }
+
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            if (altCurrentOffset + limit < total) {
+                altCurrentOffset += limit;
+                searchAltCourses(false);
+            }
+        });
+    }
+}
+
+function pickAltCourseForAlternative(course) {
+    selectedAltCourse = course;
+    const p1 = document.getElementById('altModalProf1');
+    const p2 = document.getElementById('altModalProf2');
+    const p3 = document.getElementById('altModalProf3');
+    if (p1) p1.value = course.professor || '';
+    if (p2) p2.value = '';
+    if (p3) p3.value = '';
+
+    const picked = document.getElementById('altModalSelectedCourseInfo');
+    const detail = document.getElementById('altModalSelectedCourseDetail');
+    if (picked && detail) {
+        detail.textContent = `${course.course_name} · ${course.course_code} · ${course.credits}학점 · ${course.professor}`;
+        picked.hidden = false;
+    }
+}
+
 async function loadMySelections() {
     try {
         const data = await apiRequest('/api/selections');
@@ -289,7 +467,7 @@ function renderMySelections() {
                 `;
             } else if (canAddAlt) {
                 altCell.innerHTML = `
-                    <button class="btn-add-alt-table add-alt-btn" data-selection-id="${sel.id}">+ 대체 강의</button>
+                    <button type="button" class="btn-add-alt-table add-alt-btn" data-selection-id="${sel.id}">+대체 강의</button>
                 `;
             }
         }
@@ -315,16 +493,6 @@ function setupSelectionEventListeners() {
         });
     });
 
-    document.querySelectorAll('.add-alt-btn').forEach(btn => {
-        btn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const selId = parseInt(this.dataset.selectionId);
-            const sel = mySelections.find(s => s.id === selId);
-            if (sel) {
-                openAlternativeModal(selId, sel.course);
-            }
-        });
-    });
 }
 
 function setupDragAndDrop() {
@@ -578,83 +746,39 @@ async function confirmSelection() {
     }
 }
 
-function openAlternativeModal(parentSelectionId, parentCourse) {
-    selectedParentSelectionForAlt = parentSelectionId;
+async function openAlternativeModal(parentSelectionId, sel) {
+    const parentCourse = sel && sel.course;
+    if (!parentCourse) {
+        alert('과목 정보를 불러올 수 없습니다.');
+        return;
+    }
 
-    // Display parent course info
-    document.getElementById('altModalCourseInfo').innerHTML = `
-        <strong>원 강의: ${parentCourse.course_name}</strong>
-        <p>과목번호: ${parentCourse.course_code} | 학점: ${parentCourse.credits}</p>
+    selectedParentSelectionForAlt = parentSelectionId;
+    selectedParentCourseForAlt = parentCourse;
+
+    const parentEl = document.getElementById('altModalParentInfo');
+    if (!parentEl) {
+        alert('페이지 구성을 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.');
+        return;
+    }
+
+    parentEl.innerHTML = `
+        <strong>원 강의 (${sel.priority}지망): ${parentCourse.course_name}</strong>
+        <p>과목번호: ${parentCourse.course_code} | 학점: ${parentCourse.credits} | 담당교수: ${parentCourse.professor}</p>
     `;
 
-    // Reset fields
-    document.getElementById('altModalPriority').value = '';
-    document.getElementById('altModalProf1').value = '';
-    document.getElementById('altModalProf2').value = '';
-    document.getElementById('altModalProf3').value = '';
+    resetAlternativeModalBrowseState();
+    altCurrentOffset = 0;
 
-    // Load recommended alternatives
-    loadRecommendedAlternatives(parentCourse.id);
-
+    // Open modal synchronously with the click gesture (before any await).
     openModal('alternativeModal');
-}
-
-async function loadRecommendedAlternatives(courseId) {
-    const container = document.getElementById('recommendedCourses');
 
     try {
-        const data = await apiRequest(`/api/recommendations?course_id=${courseId}&limit=5`);
-        const courses = data.courses || [];
-
-        if (courses.length === 0) {
-            container.innerHTML = '';
-            return;
-        }
-
-        // Get selected course IDs
-        const selectedCourseIds = new Set(
-            mySelections.flatMap(sel => {
-                const ids = [sel.course_id];
-                if (sel.alternatives) {
-                    ids.push(...sel.alternatives.map(alt => alt.course_id));
-                }
-                return ids;
-            })
-        );
-
-        const filteredCourses = courses.filter(c => !selectedCourseIds.has(c.id));
-
-        container.innerHTML = `
-            <h4>추천 대체 강의 (같은 분야)</h4>
-            ${filteredCourses.map((c, idx) => `
-                <div class="recommended-item" data-course-idx="${idx}">
-                    <strong>${c.course_name}</strong>
-                    <div style="font-size: 12px; color: #666;">
-                        ${c.course_code} | ${c.professor} | ${c.credits}학점 | ${c.division}
-                    </div>
-                </div>
-            `).join('')}
-        `;
-
-        // Add event listeners
-        document.querySelectorAll('.recommended-item').forEach((item, idx) => {
-            item.addEventListener('click', function() {
-                selectRecommendedAlt(filteredCourses[idx], this);
-            });
-        });
+        await loadCourseFiltersInto('altFilterDivision', 'altFilterField');
+        await searchAltCourses(true);
     } catch (error) {
-        container.innerHTML = '';
+        alert('대체 강의 개설강좌 목록을 불러오지 못했습니다: ' + error.message);
     }
-}
-
-function selectRecommendedAlt(course, clickedEl) {
-    document.querySelectorAll('#recommendedCourses .recommended-item').forEach(el => {
-        el.classList.remove('selected');
-    });
-    clickedEl.classList.add('selected');
-
-    document.getElementById('altModalProf1').value = course.professor;
-    selectedAltCourse = course;
 }
 
 async function confirmAlternative() {
@@ -663,7 +787,7 @@ async function confirmAlternative() {
     const prof3 = document.getElementById('altModalProf3').value.trim();
 
     if (!selectedAltCourse) {
-        alert('대체 강의를 선택해주세요.');
+        alert('개설강좌 목록에서 대체 강의를 선택해주세요.');
         return;
     }
 
@@ -688,6 +812,7 @@ async function confirmAlternative() {
         await loadMySelections();
         await searchCourses();
         selectedAltCourse = null;
+        selectedParentCourseForAlt = null;
     } catch (error) {
         alert('대체 강의 추가 중 오류가 발생했습니다: ' + error.message);
     }
@@ -751,9 +876,24 @@ function setupModalListeners() {
     document.getElementById('altModalCancel').addEventListener('click', () => {
         closeModal('alternativeModal');
         selectedAltCourse = null;
+        selectedParentCourseForAlt = null;
     });
     document.getElementById('altModalSkip').addEventListener('click', () => {
         closeModal('alternativeModal');
         selectedAltCourse = null;
+        selectedParentCourseForAlt = null;
     });
+
+    const altSearchBtn = document.getElementById('altSearchBtn');
+    if (altSearchBtn) {
+        altSearchBtn.addEventListener('click', () => searchAltCourses(true));
+    }
+    const altSearchInput = document.getElementById('altSearchInput');
+    if (altSearchInput) {
+        altSearchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchAltCourses(true);
+            }
+        });
+    }
 }

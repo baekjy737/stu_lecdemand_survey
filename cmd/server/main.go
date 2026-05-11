@@ -65,9 +65,6 @@ func main() {
 	// Browser form login (sets cookie + redirects)
 	mux.HandleFunc("/login", authHandler.LoginForm)
 
-	// Browser form login (sets cookie + redirects)
-	mux.HandleFunc("/login", authHandler.LoginForm)
-
 	// API routes - Authentication
 	mux.HandleFunc("/api/login", middleware.CORSMiddleware(authHandler.Login))
 	mux.HandleFunc("/api/logout", middleware.CORSMiddleware(authHandler.Logout))
