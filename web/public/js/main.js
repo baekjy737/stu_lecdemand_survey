@@ -1281,6 +1281,16 @@ async function deleteSelection(selectionId) {
 async function submitSurvey() {
     const totalCredits = parseFloat(document.getElementById('totalCredits').textContent);
 
+    // Block submission if any standalone alternatives exist (no parent main selection)
+    const standaloneAlts = mySelections.filter(s => s.is_alternative && !s.parent_selection_id);
+    if (standaloneAlts.length > 0) {
+        const names = standaloneAlts.map(s => `${s.priority}지망 대체강의: "${s.course.course_name}"`).join('\n');
+        alert(
+            '부모 선택강의가 없는 대체강의가 있습니다. 제출 전에 선택강의로 이동해 주세요.\n\n' + names
+        );
+        return;
+    }
+
     if (totalCredits < 10) {
         alert('최소 10학점 이상 선택해야 합니다.');
         return;
