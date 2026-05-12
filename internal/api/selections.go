@@ -77,14 +77,21 @@ func (h *SelectionHandler) CreateSelection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Check if course is already selected
-	isSelected, err := h.DB.IsCourseSelected(studentID, req.CourseID)
+	// Get course info to check course_code
+	course, err := h.DB.GetCourseByID(req.CourseID)
+	if err != nil || course == nil {
+		http.Error(w, "Course not found", http.StatusNotFound)
+		return
+	}
+
+	// Check if the same course_code is already selected
+	isCourseCodeSelected, err := h.DB.IsCourseCodeSelected(studentID, course.CourseCode)
 	if err != nil {
 		http.Error(w, "Failed to check course selection", http.StatusInternalServerError)
 		return
 	}
-	if isSelected {
-		http.Error(w, "Course already selected", http.StatusBadRequest)
+	if isCourseCodeSelected {
+		http.Error(w, "Same course (different professor) already selected", http.StatusBadRequest)
 		return
 	}
 
@@ -103,12 +110,6 @@ func (h *SelectionHandler) CreateSelection(w http.ResponseWriter, r *http.Reques
 	totalCredits, err := h.DB.GetTotalCredits(studentID)
 	if err != nil {
 		http.Error(w, "Failed to calculate credits", http.StatusInternalServerError)
-		return
-	}
-
-	course, err := h.DB.GetCourseByID(req.CourseID)
-	if err != nil || course == nil {
-		http.Error(w, "Course not found", http.StatusNotFound)
 		return
 	}
 
@@ -182,14 +183,21 @@ func (h *SelectionHandler) CreateAlternative(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Check if course is already selected
-	isSelected, err := h.DB.IsCourseSelected(studentID, req.CourseID)
+	// Get course info to check course_code
+	course, err := h.DB.GetCourseByID(req.CourseID)
+	if err != nil || course == nil {
+		http.Error(w, "Course not found", http.StatusNotFound)
+		return
+	}
+
+	// Check if the same course_code is already selected
+	isCourseCodeSelected, err := h.DB.IsCourseCodeSelected(studentID, course.CourseCode)
 	if err != nil {
 		http.Error(w, "Failed to check course selection", http.StatusInternalServerError)
 		return
 	}
-	if isSelected {
-		http.Error(w, "Course already selected", http.StatusBadRequest)
+	if isCourseCodeSelected {
+		http.Error(w, "Same course (different professor) already selected", http.StatusBadRequest)
 		return
 	}
 

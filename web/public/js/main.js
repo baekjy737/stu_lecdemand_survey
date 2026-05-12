@@ -382,14 +382,13 @@ function renderAltPagination(total, offset, limit) {
     }
 }
 
-function pickAltCourseForAlternative(course) {
+async function pickAltCourseForAlternative(course) {
     selectedAltCourse = course;
     const p1 = document.getElementById('altModalProf1');
-    const p2 = document.getElementById('altModalProf2');
-    const p3 = document.getElementById('altModalProf3');
     if (p1) p1.value = course.professor || '';
-    if (p2) p2.value = '';
-    if (p3) p3.value = '';
+
+    // Load professors for 2nd and 3rd choices
+    await loadProfessorsForCourse(course.id, course.professor, 'altModalProf2', 'altModalProf3');
 
     const picked = document.getElementById('altModalSelectedCourseInfo');
     const detail = document.getElementById('altModalSelectedCourseDetail');
@@ -625,7 +624,7 @@ function openEditModal(selectionId) {
     openEditModalForSelection(selection);
 }
 
-function openEditModalForSelection(selection) {
+async function openEditModalForSelection(selection) {
     selectedCourseForModal = selection.course;
 
     document.getElementById('modalCourseInfo').innerHTML = `
@@ -634,10 +633,18 @@ function openEditModalForSelection(selection) {
     `;
 
     document.getElementById('modalProf1').value = selection.professor_1st || selection.course.professor;
-    document.getElementById('modalProf2').value = selection.professor_2nd || '';
-    document.getElementById('modalProf3').value = selection.professor_3rd || '';
     document.getElementById('modalPriority').value = selection.priority;
     document.getElementById('modalPriority').disabled = true;
+
+    // Load professors for 2nd and 3rd choices
+    await loadProfessorsForCourse(
+        selection.course.id,
+        selection.professor_1st || selection.course.professor,
+        'modalProf2',
+        'modalProf3',
+        selection.professor_2nd || '',
+        selection.professor_3rd || ''
+    );
 
     displayCurrentSelectionsPreview();
 
@@ -647,7 +654,7 @@ function openEditModalForSelection(selection) {
     openModal('selectionModal');
 }
 
-function selectCourse(course) {
+async function selectCourse(course) {
     selectedCourseForModal = course;
 
     // Display course info
@@ -658,8 +665,9 @@ function selectCourse(course) {
 
     // Set professor 1st automatically
     document.getElementById('modalProf1').value = course.professor;
-    document.getElementById('modalProf2').value = '';
-    document.getElementById('modalProf3').value = '';
+
+    // Load professors for 2nd and 3rd choices
+    await loadProfessorsForCourse(course.id, course.professor, 'modalProf2', 'modalProf3');
 
     // Reset priority
     document.getElementById('modalPriority').value = '';
@@ -668,6 +676,100 @@ function selectCourse(course) {
     displayCurrentSelectionsPreview();
 
     openModal('selectionModal');
+}
+
+async function loadProfessorsForCourse(courseId, selectedProf, select2Id, select3Id, currentProf2 = '', currentProf3 = '') {
+    try {
+        const response = await apiRequest(`/api/courses/${courseId}/professors`, {
+            method: 'GET',
+        });
+
+        const professors = response.professors || [];
+
+        // Filter out the selected 1st professor
+        const availableProfessors = professors.filter(p => p !== selectedProf);
+
+        // Get dropdown elements
+        const select2 = document.getElementById(select2Id);
+        const select3 = document.getElementById(select3Id);
+
+        // Populate 2nd professor dropdown
+        select2.innerHTML = '<option value="">선택하세요</option>';
+        availableProfessors.forEach(prof => {
+            const option = document.createElement('option');
+            option.value = prof;
+            option.textContent = prof;
+            if (prof === currentProf2) {
+                option.selected = true;
+            }
+            select2.appendChild(option);
+        });
+
+        // Enable/disable based on available professors
+        if (availableProfessors.length === 0) {
+            // No other professors
+            select2.disabled = true;
+            select3.disabled = true;
+            select3.innerHTML = '<option value="">선택 불가</option>';
+        } else if (availableProfessors.length === 1) {
+            // Only 1 other professor - enable 2nd choice only
+            select2.disabled = false;
+            select3.disabled = true;
+            select3.innerHTML = '<option value="">선택 불가</option>';
+        } else {
+            // 2+ other professors - enable both
+            select2.disabled = false;
+            select3.disabled = false;
+        }
+
+        // Function to update 3rd choice dropdown based on 2nd choice
+        const updateThirdChoice = () => {
+            const selected2nd = select2.value;
+            select3.innerHTML = '<option value="">선택하세요</option>';
+
+            if (availableProfessors.length < 2) {
+                select3.innerHTML = '<option value="">선택 불가</option>';
+                select3.disabled = true;
+                return;
+            }
+
+            // Filter out 2nd choice professor
+            const available3rd = availableProfessors.filter(p => p !== selected2nd);
+
+            available3rd.forEach(prof => {
+                const option = document.createElement('option');
+                option.value = prof;
+                option.textContent = prof;
+                if (prof === currentProf3 && prof !== selected2nd) {
+                    option.selected = true;
+                }
+                select3.appendChild(option);
+            });
+
+            select3.disabled = false;
+        };
+
+        // Initial population of 3rd choice
+        updateThirdChoice();
+
+        // Remove previous event listener if exists
+        if (select2._updateHandler) {
+            select2.removeEventListener('change', select2._updateHandler);
+        }
+
+        // Add event listener to update 3rd choice when 2nd choice changes
+        select2._updateHandler = updateThirdChoice;
+        select2.addEventListener('change', updateThirdChoice);
+
+    } catch (error) {
+        console.error('Failed to load professors:', error);
+        const select2 = document.getElementById(select2Id);
+        const select3 = document.getElementById(select3Id);
+        select2.innerHTML = '<option value="">선택하세요</option>';
+        select3.innerHTML = '<option value="">선택하세요</option>';
+        select2.disabled = true;
+        select3.disabled = true;
+    }
 }
 
 function displayCurrentSelectionsPreview() {

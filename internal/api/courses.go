@@ -162,3 +162,36 @@ func (h *CourseHandler) GetRecommendedAlternatives(w http.ResponseWriter, r *htt
 		"courses": courses,
 	})
 }
+
+// GetProfessors returns all professors teaching the same course
+func (h *CourseHandler) GetProfessors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract ID from path: /api/courses/{id}/professors
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 5 {
+		http.Error(w, "Invalid course ID", http.StatusBadRequest)
+		return
+	}
+
+	idStr := pathParts[len(pathParts)-2]
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid course ID", http.StatusBadRequest)
+		return
+	}
+
+	professors, err := h.DB.GetProfessorsByCourseCode(id)
+	if err != nil {
+		http.Error(w, "Failed to get professors", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"professors": professors,
+	})
+}

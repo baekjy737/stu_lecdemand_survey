@@ -461,3 +461,43 @@ func (d *Database) GetRecommendedAlternatives(courseID int, limit int) ([]models
 
 	return courses, nil
 }
+
+func (d *Database) GetProfessorsByCourseCode(courseID int) ([]string, error) {
+	// Get the course info first to find the course_code
+	course, err := d.GetCourseByID(courseID)
+	if err != nil || course == nil {
+		return nil, fmt.Errorf("course not found")
+	}
+
+	// Find all professors teaching the same course_code
+	query := `SELECT DISTINCT professor FROM courses
+			  WHERE is_active = TRUE AND course_code = ?
+			  ORDER BY professor`
+
+	rows, err := d.DB.Query(query, course.CourseCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var professors []string
+	for rows.Next() {
+		var professor string
+		if err := rows.Scan(&professor); err != nil {
+			return nil, err
+		}
+		professors = append(professors, professor)
+	}
+
+	return professors, nil
+}
+
+func (d *Database) IsCourseCodeSelected(studentID int, courseCode string) (bool, error) {
+	query := `SELECT COUNT(*) FROM course_selections cs
+			  JOIN courses c ON cs.course_id = c.id
+			  WHERE cs.student_id = ? AND c.course_code = ?`
+
+	var count int
+	err := d.DB.QueryRow(query, studentID, courseCode).Scan(&count)
+	return count > 0, err
+}

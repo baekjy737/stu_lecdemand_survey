@@ -73,7 +73,7 @@ func main() {
 	// API routes - Courses
 	mux.HandleFunc("/api/course-filters", middleware.CORSMiddleware(middleware.AuthMiddleware(courseHandler.GetCourseFilterOptions)))
 	mux.HandleFunc("/api/courses", middleware.CORSMiddleware(middleware.AuthMiddleware(courseHandler.GetCourses)))
-	mux.HandleFunc("/api/courses/", middleware.CORSMiddleware(middleware.AuthMiddleware(courseHandler.GetCourse)))
+	mux.HandleFunc("/api/courses/", middleware.CORSMiddleware(middleware.AuthMiddleware(handleCoursesWithID(courseHandler))))
 	mux.HandleFunc("/api/recommendations", middleware.CORSMiddleware(middleware.AuthMiddleware(courseHandler.GetRecommendedAlternatives)))
 
 	// API routes - Selections
@@ -180,6 +180,27 @@ func serveHTML(path string) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		http.ServeContent(w, r, st.Name(), st.ModTime(), f)
+	}
+}
+
+func handleCoursesWithID(h *api.CourseHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Check if it's professors endpoint
+		if strings.HasSuffix(r.URL.Path, "/professors") {
+			if r.Method == http.MethodGet {
+				h.GetProfessors(w, r)
+			} else {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
+
+		// Default: GetCourse
+		if r.Method == http.MethodGet {
+			h.GetCourse(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 	}
 }
 
