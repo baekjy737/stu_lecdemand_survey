@@ -78,6 +78,8 @@ func main() {
 
 	// API routes - Selections
 	mux.HandleFunc("/api/selections", middleware.CORSMiddleware(middleware.AuthMiddleware(handleSelectionsCRUD(selectionHandler))))
+	// More specific route must be registered before the prefix route
+	mux.HandleFunc("/api/selections/standalone-alternative", middleware.CORSMiddleware(middleware.AuthMiddleware(selectionHandler.CreateStandaloneAlternative)))
 	mux.HandleFunc("/api/selections/", middleware.CORSMiddleware(middleware.AuthMiddleware(handleSelectionsWithID(selectionHandler))))
 	mux.HandleFunc("/api/submit", middleware.CORSMiddleware(middleware.AuthMiddleware(selectionHandler.Submit)))
 	mux.HandleFunc("/api/reopen", middleware.CORSMiddleware(middleware.AuthMiddleware(selectionHandler.Reopen)))

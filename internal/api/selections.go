@@ -237,6 +237,83 @@ func (h *SelectionHandler) CreateAlternative(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(response)
 }
 
+// CreateStandaloneAlternative creates an alternative course without a parent selection
+func (h *SelectionHandler) CreateStandaloneAlternative(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	studentID, ok := middleware.GetStudentIDFromContext(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req models.CreateStandaloneAlternativeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Priority < 1 || req.Priority > 10 {
+		http.Error(w, "Priority must be between 1 and 10", http.StatusBadRequest)
+		return
+	}
+
+	course, err := h.DB.GetCourseByID(req.CourseID)
+	if err != nil || course == nil {
+		http.Error(w, "Course not found", http.StatusNotFound)
+		return
+	}
+
+	isCourseCodeSelected, err := h.DB.IsCourseCodeSelected(studentID, course.CourseCode)
+	if err != nil {
+		http.Error(w, "Failed to check course selection", http.StatusInternalServerError)
+		return
+	}
+	if isCourseCodeSelected {
+		http.Error(w, "Same course (different professor) already selected", http.StatusBadRequest)
+		return
+	}
+
+	isAltTaken, err := h.DB.IsAlternativeTakenAtPriority(studentID, req.Priority)
+	if err != nil {
+		http.Error(w, "Failed to check alternative priority", http.StatusInternalServerError)
+		return
+	}
+	if isAltTaken {
+		http.Error(w, "Alternative already exists at this priority", http.StatusBadRequest)
+		return
+	}
+
+	altPriority := 1
+	selection := &models.CourseSelection{
+		StudentID:           studentID,
+		CourseID:            req.CourseID,
+		Priority:            req.Priority,
+		Professor1st:        req.Professor1st,
+		Professor2nd:        req.Professor2nd,
+		Professor3rd:        req.Professor3rd,
+		IsAlternative:       true,
+		ParentSelectionID:   nil,
+		AlternativePriority: &altPriority,
+	}
+
+	if err := h.DB.CreateSelection(selection); err != nil {
+		http.Error(w, "Failed to create alternative", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"success":        true,
+		"alternative_id": selection.ID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // UpdatePriority updates the priority of a selection
 func (h *SelectionHandler) UpdatePriority(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {

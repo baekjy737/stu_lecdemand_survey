@@ -10,6 +10,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const form = document.getElementById('loginForm');
     const additionalFields = document.getElementById('additionalFields');
+    const majorSelect = document.getElementById('major');
+    const minorSelect = document.getElementById('minor');
+
+    const TRACKS = Array.from(majorSelect.options)
+        .filter(o => o.value)
+        .map(o => o.value);
+
+    // Rebuild minor options each time major changes, excluding the selected major
+    function rebuildMinorOptions() {
+        const selectedMajor = majorSelect.value;
+        const currentMinor = minorSelect.value;
+
+        minorSelect.innerHTML = '<option value="">선택하세요</option>';
+        TRACKS.forEach(track => {
+            if (track === selectedMajor) return;
+            const opt = document.createElement('option');
+            opt.value = track;
+            opt.textContent = track;
+            if (track === currentMinor) opt.selected = true;
+            minorSelect.appendChild(opt);
+        });
+    }
+
+    majorSelect.addEventListener('change', rebuildMinorOptions);
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -28,8 +52,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Include additional fields if they are visible
         if (additionalFields.style.display !== 'none') {
-            formData.major = document.getElementById('major').value;
-            formData.minor = document.getElementById('minor').value;
+            formData.major = majorSelect.value;
+            formData.minor = minorSelect.value;
             formData.current_year = document.getElementById('currentYear').value;
             formData.special_notes = document.getElementById('specialNotes').value.trim();
         }

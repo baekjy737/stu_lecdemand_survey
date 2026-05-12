@@ -36,6 +36,36 @@ body {
 
 .student-info {
     font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.student-info-trigger {
+    position: relative;
+    cursor: default;
+}
+
+.student-info-tooltip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: #fff;
+    color: #333;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 10px 14px;
+    min-width: 220px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 200;
+    font-size: 13px;
+    line-height: 1.9;
+    white-space: nowrap;
+}
+
+.student-info-trigger:hover .student-info-tooltip {
+    display: block;
 }
 
 .separator {

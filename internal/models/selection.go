@@ -37,8 +37,16 @@ type CreateSelectionRequest struct {
 }
 
 type CreateAlternativeRequest struct {
+	CourseID            int    `json:"course_id"`
+	AlternativePriority int    `json:"alternative_priority"`
+	Professor1st        string `json:"professor_1st"`
+	Professor2nd        string `json:"professor_2nd,omitempty"`
+	Professor3rd        string `json:"professor_3rd,omitempty"`
+}
+
+type CreateStandaloneAlternativeRequest struct {
 	CourseID     int    `json:"course_id"`
-	AlternativePriority int `json:"alternative_priority"`
+	Priority     int    `json:"priority"`
 	Professor1st string `json:"professor_1st"`
 	Professor2nd string `json:"professor_2nd,omitempty"`
 	Professor3rd string `json:"professor_3rd,omitempty"`

@@ -75,6 +75,18 @@ func (h *AuthHandler) performLogin(req *models.LoginRequest) (*loginResult, *log
 			return nil, &loginFailure{Code: "invalid_password", Status: http.StatusUnauthorized}
 		}
 
+		// Update additional info if the request includes it and existing record is empty
+		if req.Major != "" || req.Minor != "" || req.CurrentYear != "" || req.SpecialNotes != "" {
+			_ = h.DB.UpdateStudentAdditionalInfo(
+				existingStudent.ID,
+				req.Major, req.Minor, req.CurrentYear, req.SpecialNotes,
+			)
+			existingStudent.Major = req.Major
+			existingStudent.Minor = req.Minor
+			existingStudent.CurrentYear = req.CurrentYear
+			existingStudent.SpecialNotes = req.SpecialNotes
+		}
+
 		student = existingStudent
 	}
 

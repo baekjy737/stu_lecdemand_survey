@@ -80,6 +80,13 @@ func (d *Database) UpdateStudentSubmitStatus(studentID int, isSubmitted bool) er
 	return err
 }
 
+func (d *Database) UpdateStudentAdditionalInfo(studentID int, major, minor, currentYear, specialNotes string) error {
+	query := `UPDATE students SET major = ?, minor = ?, current_year = ?, special_notes = ?,
+			  updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	_, err := d.DB.Exec(query, major, minor, currentYear, specialNotes, studentID)
+	return err
+}
+
 // Course queries
 
 func (d *Database) GetCourseFilterOptions() (divisions []string, fields []string, err error) {
@@ -246,8 +253,11 @@ func (d *Database) GetSelectionsByStudent(studentID int) ([]models.SelectionWith
 			   c.field, c.area, c.credits, c.syllabus_link, c.schedule
 		FROM course_selections cs
 		JOIN courses c ON cs.course_id = c.id
-		WHERE cs.student_id = ? AND cs.is_alternative = FALSE
-		ORDER BY cs.priority
+		WHERE cs.student_id = ? AND (
+			cs.is_alternative = FALSE OR
+			(cs.is_alternative = TRUE AND cs.parent_selection_id IS NULL)
+		)
+		ORDER BY cs.priority, cs.is_alternative
 	`
 
 	rows, err := d.DB.Query(query, studentID)
@@ -285,12 +295,14 @@ func (d *Database) GetSelectionsByStudent(studentID int) ([]models.SelectionWith
 			sel.AlternativePriority = &priority
 		}
 
-		// Get alternatives for this selection
-		alternatives, err := d.GetAlternatives(sel.ID)
-		if err != nil {
-			return nil, err
+		// Only fetch attached alternatives for main selections
+		if !sel.IsAlternative {
+			alternatives, err := d.GetAlternatives(sel.ID)
+			if err != nil {
+				return nil, err
+			}
+			sel.Alternatives = alternatives
 		}
-		sel.Alternatives = alternatives
 
 		selections = append(selections, sel)
 	}
@@ -416,6 +428,15 @@ func (d *Database) IsCourseSelected(studentID, courseID int) (bool, error) {
 func (d *Database) IsPriorityTaken(studentID, priority int) (bool, error) {
 	query := `SELECT COUNT(*) FROM course_selections
 			  WHERE student_id = ? AND priority = ? AND is_alternative = FALSE`
+
+	var count int
+	err := d.DB.QueryRow(query, studentID, priority).Scan(&count)
+	return count > 0, err
+}
+
+func (d *Database) IsAlternativeTakenAtPriority(studentID, priority int) (bool, error) {
+	query := `SELECT COUNT(*) FROM course_selections
+			  WHERE student_id = ? AND priority = ? AND is_alternative = TRUE`
 
 	var count int
 	err := d.DB.QueryRow(query, studentID, priority).Scan(&count)

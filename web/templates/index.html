@@ -13,9 +13,12 @@
             <div class="header-content">
                 <h1>수강신청 설문조사</h1>
                 <div class="student-info">
-                    <span id="studentName">-</span> (<span id="studentId">-</span>)
-                    <span class="separator">|</span>
-                    <span id="studentMajor">-</span>
+                    <div class="student-info-trigger">
+                        <span id="studentName">-</span> (<span id="studentId">-</span>)
+                        <span class="separator">|</span>
+                        <span id="studentMajor">-</span>
+                        <div class="student-info-tooltip" id="studentInfoTooltip"></div>
+                    </div>
                     <button id="logoutBtn" class="btn btn-secondary btn-sm">로그아웃</button>
                 </div>
             </div>
@@ -292,8 +295,24 @@
             </div>
             <div class="modal-footer">
                 <button id="altModalConfirm" class="btn btn-primary">확인</button>
-                <button id="altModalCancel" class="btn btn-secondary">취소</button>
-                <button id="altModalSkip" class="btn btn-tertiary">나중에 추가</button>
+                <button id="altModalSkip" class="btn btn-secondary">나중에 추가</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Priority Conflict Modal -->
+    <div id="priorityConflictModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>지망 순위 중복</h3>
+            </div>
+            <div class="modal-body">
+                <p id="priorityConflictMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="conflictReplaceBtn" class="btn btn-primary">현재 강의로 교체</button>
+                <button id="conflictAddAltBtn" class="btn btn-secondary">대체강의로 추가</button>
+                <button id="conflictCancelBtn" class="btn btn-tertiary">취소</button>
             </div>
         </div>
     </div>

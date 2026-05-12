@@ -7,6 +7,7 @@ let selectedCourseForModal = null;
 let selectedParentSelectionForAlt = null;
 let selectedParentCourseForAlt = null;
 let selectedAltCourse = null;
+let pendingConflictData = null;
 
 let altCurrentOffset = 0;
 let altCurrentTotal = 0;
@@ -28,6 +29,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('studentName').textContent = currentStudent.name;
     document.getElementById('studentId').textContent = currentStudent.student_id;
     document.getElementById('studentMajor').textContent = currentStudent.major || '-';
+
+    // Populate hover tooltip with additional info
+    const tooltipEl = document.getElementById('studentInfoTooltip');
+    if (tooltipEl) {
+        const rows = [
+            ['목표 전공', currentStudent.major],
+            ['부전공/복수전공', currentStudent.minor],
+            ['재학 학년', currentStudent.current_year],
+            ['특이사항', currentStudent.special_notes],
+        ];
+        const html = rows
+            .filter(([, v]) => v)
+            .map(([k, v]) => `<div><strong>${k}:</strong> ${v}</div>`)
+            .join('');
+        tooltipEl.innerHTML = html || '<div style="color:#999">추가 정보 없음</div>';
+    }
 
     await loadCourseFiltersInto('filterDivision', 'filterField');
 
@@ -431,14 +448,22 @@ function renderMySelections() {
         cell.classList.remove('has-selection');
         cell.removeAttribute('draggable');
         cell.removeAttribute('data-selection-id');
+        delete cell.dataset.isAlternative;
+        delete cell.dataset.parentSelectionId;
     });
 
     if (mySelections.length === 0) {
         return;
     }
 
-    // Render each selection
-    mySelections.forEach(sel => {
+    const mainSelections = mySelections.filter(s => !s.is_alternative);
+    const standaloneAlts = mySelections.filter(s => s.is_alternative && !s.parent_selection_id);
+
+    // Track which alt cells are occupied by attached alternatives
+    const occupiedAltPriorities = new Set();
+
+    // Render main selections and their attached alternatives
+    mainSelections.forEach(sel => {
         const mainCell = document.querySelector(`.selection-cell[data-priority="${sel.priority}"][data-type="main"]`);
         if (mainCell) {
             mainCell.classList.add('has-selection');
@@ -458,20 +483,19 @@ function renderMySelections() {
             `;
         }
 
-        // Render alternatives
         const altCell = document.querySelector(`.selection-cell[data-priority="${sel.priority}"][data-type="alternative"]`);
         if (altCell) {
             const alternatives = sel.alternatives || [];
             const hasAlternative = alternatives.length > 0;
-            const canAddAlt = !hasAlternative;
 
             if (hasAlternative) {
                 const alt = alternatives[0];
                 altCell.classList.add('has-selection');
                 altCell.draggable = true;
-                altCell.dataset.selectionId = alt.id; // Use alternative selection ID
+                altCell.dataset.selectionId = alt.id;
                 altCell.dataset.isAlternative = 'true';
-                altCell.dataset.parentSelectionId = sel.id; // Store parent ID for moving
+                altCell.dataset.parentSelectionId = sel.id;
+                occupiedAltPriorities.add(sel.priority);
 
                 altCell.innerHTML = `
                     <div class="selection-content alternative">
@@ -484,11 +508,37 @@ function renderMySelections() {
                         </div>
                     </div>
                 `;
-            } else if (canAddAlt) {
+            } else {
                 altCell.innerHTML = `
                     <button type="button" class="btn-add-alt-table add-alt-btn" data-selection-id="${sel.id}">+대체 강의</button>
                 `;
             }
+        }
+    });
+
+    // Render standalone alternatives (no parent selection)
+    standaloneAlts.forEach(alt => {
+        if (occupiedAltPriorities.has(alt.priority)) return;
+
+        const altCell = document.querySelector(`.selection-cell[data-priority="${alt.priority}"][data-type="alternative"]`);
+        if (altCell) {
+            altCell.classList.add('has-selection');
+            altCell.draggable = true;
+            altCell.dataset.selectionId = alt.id;
+            altCell.dataset.isAlternative = 'true';
+            altCell.dataset.parentSelectionId = ''; // empty = standalone
+
+            altCell.innerHTML = `
+                <div class="selection-content alternative">
+                    <div class="selection-course-name">${alt.course.course_name}</div>
+                    <div class="selection-credits">${alt.course.credits}학점</div>
+                    <div class="selection-professors">${alt.professor_1st}${alt.professor_2nd ? ', ' + alt.professor_2nd : ''}${alt.professor_3rd ? ', ' + alt.professor_3rd : ''}</div>
+                    <div class="selection-actions-inline">
+                        <button class="btn-icon edit-selection-btn" title="수정" data-selection-id="${alt.id}">✏️</button>
+                        <button class="btn-icon delete-selection-btn" title="삭제" data-selection-id="${alt.id}">🗑️</button>
+                    </div>
+                </div>
+            `;
         }
     });
 
@@ -572,267 +622,248 @@ function handleDragLeave(e) {
 }
 
 async function handleDrop(e) {
-    if (e.stopPropagation) {
-        e.stopPropagation();
-    }
+    e.stopPropagation();
     e.preventDefault();
-
     this.classList.remove('drag-over');
-
-    if (this === draggedElement) {
-        return false;
-    }
+    if (this === draggedElement) return false;
 
     const targetPriority = parseInt(this.dataset.priority);
+    const targetCellType = this.dataset.type; // 'main' | 'alternative'
 
-    // Handle alternative course drag
-    if (draggedIsAlternative) {
-        // Find the alternative selection
-        let draggedAlt = null;
-        let draggedAltParentPriority = null;
-        for (const sel of mySelections) {
-            if (sel.alternatives) {
-                draggedAlt = sel.alternatives.find(a => a.id === draggedSelectionId);
-                if (draggedAlt) {
-                    draggedAltParentPriority = sel.priority;
-                    break;
-                }
-            }
-        }
+    // Resolve dragged item from current mySelections snapshot
+    const source = resolveItem(draggedSelectionId, draggedIsAlternative);
+    if (!source) return false;
 
-        if (!draggedAlt) {
-            return false;
-        }
+    // Same cell: do nothing
+    const sourceCellType = source.isAlternative ? 'alternative' : 'main';
+    if (source.priority === targetPriority && sourceCellType === targetCellType) return false;
 
-        const targetCellType = this.dataset.type;
+    // Resolve target item (null = empty cell)
+    const target = getItemAtCell(targetPriority, targetCellType);
 
-        if (targetCellType === 'alternative') {
-            // Moving to alternative cell
-            const targetSelection = mySelections.find(s => s.priority === targetPriority);
-
-            if (!targetSelection) {
-                alert('대체 강의는 선택 강의가 있는 지망으로만 이동할 수 있습니다.');
-                return false;
-            }
-
-            // Check if target already has an alternative
-            if (targetSelection.alternatives && targetSelection.alternatives.length > 0) {
-                alert('이미 대체 강의가 있는 지망입니다.');
-                return false;
-            }
-
-            const confirmMsg = `"${draggedAlt.course.course_name}" 대체 강의를 ${targetPriority}지망 대체강의로 이동하시겠습니까?`;
-            if (!confirm(confirmMsg)) {
-                return false;
-            }
-
-            // Move alternative: delete old, create new
-            await moveAlternative(draggedSelectionId, targetSelection.id, draggedAlt);
-            return false;
-        } else {
-            // Moving to main cell - convert alternative to main selection
-            const targetSelection = mySelections.find(s => s.priority === targetPriority);
-
-            if (!targetSelection) {
-                // Empty main slot - convert alternative to main
-                const confirmMsg = `"${draggedAlt.course.course_name}" 대체 강의를 ${targetPriority}지망 선택강의로 변경하시겠습니까?`;
-                if (!confirm(confirmMsg)) {
-                    return false;
-                }
-
-                await convertAlternativeToMain(draggedSelectionId, draggedAlt, targetPriority);
-                return false;
-            } else {
-                // Occupied main slot - swap: alternative becomes main, main becomes alternative at original position
-                const confirmMsg = `${targetPriority}지망 "${targetSelection.course.course_name}"와(과) 대체 강의 "${draggedAlt.course.course_name}"를 교환하시겠습니까?\n(대체강의는 ${targetPriority}지망 선택강의가 되고, ${targetPriority}지망 선택강의는 ${draggedAltParentPriority}지망 대체강의가 됩니다)`;
-                if (!confirm(confirmMsg)) {
-                    return false;
-                }
-
-                await swapAlternativeWithMain(draggedSelectionId, draggedAlt, targetSelection, draggedParentSelectionId);
-                return false;
-            }
-        }
-    }
-
-    // Handle main selection drag
-    const draggedSelection = mySelections.find(s => s.id === draggedSelectionId);
-
-    if (!draggedSelection) {
-        return false;
-    }
-
-    const sourcePriority = draggedSelection.priority;
-
-    // If source and target are the same priority, do nothing
-    if (sourcePriority === targetPriority) {
-        return false;
-    }
-
-    // Check if target priority is occupied (always check main selection)
-    const targetSelection = mySelections.find(s => s.priority === targetPriority);
-
-    if (targetSelection) {
-        // Ask for confirmation before swapping
-        const draggedCourseName = draggedSelection.course.course_name;
-        const targetCourseName = targetSelection.course.course_name;
-
-        const confirmMsg = `${sourcePriority}지망 "${draggedCourseName}"와(과) ${targetPriority}지망 "${targetCourseName}"의 우선순위를 교환하시겠습니까?`;
-
-        if (!confirm(confirmMsg)) {
-            return false;
-        }
-
-        // Swap priorities
-        await swapPriorities(draggedSelectionId, targetSelection.id, sourcePriority, targetPriority);
+    // Build confirm message
+    const srcLabel = source.isAlternative ? '대체강의' : '선택강의';
+    const tgtCellLabel = targetCellType === 'main' ? '선택강의' : '대체강의';
+    let confirmMsg;
+    if (target) {
+        const tgtLabel = target.isAlternative ? '대체강의' : '선택강의';
+        confirmMsg = `"${source.course.course_name}"(${srcLabel})와(과) "${target.course.course_name}"(${tgtLabel})를 교환하시겠습니까?`;
+        const warnings = [];
+        if (!source.isAlternative && source.hasAlts) warnings.push(`"${source.course.course_name}"의 대체강의 삭제`);
+        if (!target.isAlternative && target.hasAlts) warnings.push(`"${target.course.course_name}"의 대체강의 삭제`);
+        if (warnings.length) confirmMsg += '\n(주의: ' + warnings.join(', ') + ')';
     } else {
-        // Just move to empty slot
-        await updatePriority(draggedSelectionId, targetPriority);
+        confirmMsg = `"${source.course.course_name}"을(를) ${targetPriority}지망 ${tgtCellLabel}로 이동하시겠습니까?`;
+        if (!source.isAlternative && source.hasAlts) confirmMsg += '\n(주의: 연결된 대체강의 삭제)';
+    }
+    if (!confirm(confirmMsg)) return false;
+
+    // Main→Main: use priority API to preserve attached alternatives
+    if (!source.isAlternative && targetCellType === 'main') {
+        try {
+            if (target) {
+                await swapMainPriorities(source.id, target.id, source.priority, targetPriority);
+            } else {
+                await apiRequest(`/api/selections/${source.id}/priority`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ priority: targetPriority }),
+                });
+                await loadMySelections();
+                await searchCourses();
+            }
+        } catch (err) {
+            alert('이동 중 오류가 발생했습니다: ' + err.message);
+            await loadMySelections();
+            await searchCourses();
+        }
+        return false;
     }
 
+    // All other combinations: delete + create
+    await executeSwapOrMove(source, target, targetCellType, targetPriority);
     return false;
 }
 
-async function moveAlternative(altSelectionId, newParentSelectionId, altData) {
-    try {
-        // Delete the alternative from its current parent
-        await apiRequest(`/api/selections/${altSelectionId}`, {
-            method: 'DELETE',
-        });
-
-        // Add it to the new parent
-        await apiRequest(`/api/selections/${newParentSelectionId}/alternatives`, {
-            method: 'POST',
-            body: JSON.stringify({
-                course_id: altData.course_id,
-                alternative_priority: 1,
-                professor_1st: altData.professor_1st,
-                professor_2nd: altData.professor_2nd || '',
-                professor_3rd: altData.professor_3rd || '',
-            }),
-        });
-
-        await loadMySelections();
-        await searchCourses();
-    } catch (error) {
-        alert('대체 강의 이동 중 오류가 발생했습니다: ' + error.message);
+// Resolve a dragged item's full data from the current mySelections snapshot
+function resolveItem(selectionId, isAlt) {
+    if (!isAlt) {
+        const sel = mySelections.find(s => s.id === selectionId && !s.is_alternative);
+        if (!sel) return null;
+        return {
+            id: sel.id, courseId: sel.course_id, course: sel.course,
+            prof1: sel.professor_1st, prof2: sel.professor_2nd, prof3: sel.professor_3rd,
+            isAlternative: false, parentSelectionId: null, priority: sel.priority,
+            hasAlts: !!(sel.alternatives && sel.alternatives.length),
+        };
     }
-}
-
-async function convertAlternativeToMain(altSelectionId, altData, newPriority) {
-    try {
-        // Delete the alternative
-        await apiRequest(`/api/selections/${altSelectionId}`, {
-            method: 'DELETE',
-        });
-
-        // Create as main selection
-        await apiRequest('/api/selections', {
-            method: 'POST',
-            body: JSON.stringify({
-                course_id: altData.course_id,
-                priority: newPriority,
-                professor_1st: altData.professor_1st,
-                professor_2nd: altData.professor_2nd || '',
-                professor_3rd: altData.professor_3rd || '',
-            }),
-        });
-
-        await loadMySelections();
-        await searchCourses();
-    } catch (error) {
-        alert('대체 강의를 선택 강의로 변경하는 중 오류가 발생했습니다: ' + error.message);
-    }
-}
-
-async function swapAlternativeWithMain(altSelectionId, altData, mainSelection, originalParentSelectionId) {
-    try {
-        // Step 1: Delete the alternative
-        await apiRequest(`/api/selections/${altSelectionId}`, {
-            method: 'DELETE',
-        });
-
-        // Step 2: Delete the main selection
-        await apiRequest(`/api/selections/${mainSelection.id}`, {
-            method: 'DELETE',
-        });
-
-        // Step 3: Create the alternative as main at target priority
-        await apiRequest('/api/selections', {
-            method: 'POST',
-            body: JSON.stringify({
-                course_id: altData.course_id,
-                priority: mainSelection.priority,
-                professor_1st: altData.professor_1st,
-                professor_2nd: altData.professor_2nd || '',
-                professor_3rd: altData.professor_3rd || '',
-            }),
-        });
-
-        // Step 4: Create the former main as alternative at original parent
-        await apiRequest(`/api/selections/${originalParentSelectionId}/alternatives`, {
-            method: 'POST',
-            body: JSON.stringify({
-                course_id: mainSelection.course_id,
-                alternative_priority: 1,
-                professor_1st: mainSelection.professor_1st,
-                professor_2nd: mainSelection.professor_2nd || '',
-                professor_3rd: mainSelection.professor_3rd || '',
-            }),
-        });
-
-        await loadMySelections();
-        await searchCourses();
-    } catch (error) {
-        alert('선택 강의와 대체 강의 교환 중 오류가 발생했습니다: ' + error.message);
-    }
-}
-
-async function swapPriorities(selId1, selId2, priority1, priority2) {
-    try {
-        // Find an unused priority slot to use as temporary
-        const usedPriorities = new Set(mySelections.map(s => s.priority));
-        let tempPriority = null;
-        for (let i = 1; i <= 10; i++) {
-            if (!usedPriorities.has(i) && i !== priority1 && i !== priority2) {
-                tempPriority = i;
-                break;
+    // Attached alternatives (nested inside main selections)
+    for (const sel of mySelections) {
+        if (!sel.is_alternative && sel.alternatives) {
+            const a = sel.alternatives.find(a => a.id === selectionId);
+            if (a) {
+                return {
+                    id: a.id, courseId: a.course_id, course: a.course,
+                    prof1: a.professor_1st, prof2: a.professor_2nd, prof3: a.professor_3rd,
+                    isAlternative: true, parentSelectionId: sel.id, priority: sel.priority,
+                    hasAlts: false,
+                };
             }
         }
+    }
+    // Standalone alternatives (top-level with is_alternative=true)
+    const standalone = mySelections.find(s => s.is_alternative && s.id === selectionId);
+    if (standalone) {
+        return {
+            id: standalone.id, courseId: standalone.course_id, course: standalone.course,
+            prof1: standalone.professor_1st, prof2: standalone.professor_2nd, prof3: standalone.professor_3rd,
+            isAlternative: true, parentSelectionId: null, priority: standalone.priority,
+            hasAlts: false,
+        };
+    }
+    return null;
+}
 
-        if (tempPriority === null) {
-            // No empty slot, just try sequential update
-            await updatePriorityDirect(selId1, priority2);
-            await updatePriorityDirect(selId2, priority1);
-        } else {
-            // Use temporary slot to avoid conflicts
-            await updatePriorityDirect(selId1, tempPriority);
-            await updatePriorityDirect(selId2, priority1);
-            await updatePriorityDirect(selId1, priority2);
+// Get the item currently occupying a cell (null = empty)
+function getItemAtCell(priority, cellType) {
+    if (cellType === 'main') {
+        const sel = mySelections.find(s => s.priority === priority && !s.is_alternative);
+        if (!sel) return null;
+        return {
+            id: sel.id, courseId: sel.course_id, course: sel.course,
+            prof1: sel.professor_1st, prof2: sel.professor_2nd, prof3: sel.professor_3rd,
+            isAlternative: false, parentSelectionId: null, priority: priority,
+            hasAlts: !!(sel.alternatives && sel.alternatives.length),
+        };
+    }
+    // Alt cell: check attached first, then standalone
+    const parentSel = mySelections.find(s => s.priority === priority && !s.is_alternative);
+    if (parentSel && parentSel.alternatives && parentSel.alternatives.length > 0) {
+        const a = parentSel.alternatives[0];
+        return {
+            id: a.id, courseId: a.course_id, course: a.course,
+            prof1: a.professor_1st, prof2: a.professor_2nd, prof3: a.professor_3rd,
+            isAlternative: true, parentSelectionId: parentSel.id, priority: priority,
+            hasAlts: false,
+        };
+    }
+    const standalone = mySelections.find(s => s.is_alternative && s.priority === priority);
+    if (standalone) {
+        return {
+            id: standalone.id, courseId: standalone.course_id, course: standalone.course,
+            prof1: standalone.professor_1st, prof2: standalone.professor_2nd, prof3: standalone.professor_3rd,
+            isAlternative: true, parentSelectionId: null, priority: priority,
+            hasAlts: false,
+        };
+    }
+    return null;
+}
+
+// Execute move (target=null) or swap (target!=null) for non-main→main operations
+async function executeSwapOrMove(source, target, targetCellType, targetPriority) {
+    // Track deleted IDs so createAtCell avoids stale mySelections references
+    const deletedIds = new Set();
+    try {
+        // Delete source
+        await apiRequest(`/api/selections/${source.id}`, { method: 'DELETE' });
+        deletedIds.add(source.id);
+
+        // Delete target; it may already be cascade-deleted (e.g. main's own attached alt)
+        if (target) {
+            try {
+                await apiRequest(`/api/selections/${target.id}`, { method: 'DELETE' });
+            } catch (e) {
+                if (!/not found/i.test(e.message)) throw e;
+            }
+            deletedIds.add(target.id);
+        }
+
+        // Place source at target cell
+        await createAtCell(source, targetCellType, targetPriority, deletedIds);
+
+        // Place target at source cell (swap only)
+        if (target) {
+            await createAtCell(target, sourceCellType(source), source.priority, deletedIds);
         }
 
         await loadMySelections();
         await searchCourses();
-    } catch (error) {
-        alert('우선순위 변경 중 오류가 발생했습니다: ' + error.message);
-    }
-}
-
-async function updatePriority(selectionId, newPriority) {
-    try {
-        await updatePriorityDirect(selectionId, newPriority);
+    } catch (err) {
+        alert('이동 중 오류가 발생했습니다: ' + err.message);
         await loadMySelections();
         await searchCourses();
-    } catch (error) {
-        alert('우선순위 변경 중 오류가 발생했습니다: ' + error.message);
     }
 }
 
-async function updatePriorityDirect(selectionId, newPriority) {
-    await apiRequest(`/api/selections/${selectionId}/priority`, {
+function sourceCellType(source) {
+    return source.isAlternative ? 'alternative' : 'main';
+}
+
+// Create an item at the given cell position, respecting which parent mains still exist
+async function createAtCell(item, cellType, priority, deletedIds = new Set()) {
+    if (cellType === 'main') {
+        await apiRequest('/api/selections', {
+            method: 'POST',
+            body: JSON.stringify({
+                course_id: item.courseId,
+                priority: priority,
+                professor_1st: item.prof1,
+                professor_2nd: item.prof2 || '',
+                professor_3rd: item.prof3 || '',
+            }),
+        });
+        return;
+    }
+    // Alt cell: attach to existing parent main at this priority, else standalone
+    const parentSel = mySelections.find(s => s.priority === priority && !s.is_alternative && !deletedIds.has(s.id));
+    if (parentSel) {
+        await apiRequest(`/api/selections/${parentSel.id}/alternatives`, {
+            method: 'POST',
+            body: JSON.stringify({
+                course_id: item.courseId,
+                alternative_priority: 1,
+                professor_1st: item.prof1,
+                professor_2nd: item.prof2 || '',
+                professor_3rd: item.prof3 || '',
+            }),
+        });
+    } else {
+        await apiRequest('/api/selections/standalone-alternative', {
+            method: 'POST',
+            body: JSON.stringify({
+                course_id: item.courseId,
+                priority: priority,
+                professor_1st: item.prof1,
+                professor_2nd: item.prof2 || '',
+                professor_3rd: item.prof3 || '',
+            }),
+        });
+    }
+}
+
+// Swap two main selections using temporary priority slot (preserves their attached alternatives)
+async function swapMainPriorities(selId1, selId2, priority1, priority2) {
+    const usedPriorities = new Set(mySelections.filter(s => !s.is_alternative).map(s => s.priority));
+    let tempPriority = null;
+    for (let i = 1; i <= 10; i++) {
+        if (!usedPriorities.has(i) && i !== priority1 && i !== priority2) {
+            tempPriority = i;
+            break;
+        }
+    }
+    const put = (id, p) => apiRequest(`/api/selections/${id}/priority`, {
         method: 'PUT',
-        body: JSON.stringify({ priority: newPriority }),
+        body: JSON.stringify({ priority: p }),
     });
+    if (tempPriority !== null) {
+        await put(selId1, tempPriority);
+        await put(selId2, priority1);
+        await put(selId1, priority2);
+    } else {
+        await put(selId1, priority2);
+        await put(selId2, priority1);
+    }
+    await loadMySelections();
+    await searchCourses();
 }
 
 function openEditModal(selectionId) {
@@ -879,7 +910,7 @@ async function openEditModalForSelection(selection) {
 }
 
 function findLowestAvailablePriority() {
-    const usedPriorities = new Set(mySelections.map(s => s.priority));
+    const usedPriorities = new Set(mySelections.filter(s => !s.is_alternative).map(s => s.priority));
     for (let i = 1; i <= 10; i++) {
         if (!usedPriorities.has(i)) {
             return i;
@@ -1026,7 +1057,7 @@ function displayCurrentSelectionsPreview() {
         <h4>현재 선택 현황</h4>
         <div style="font-size: 12px; color: #666;">
             ${[1,2,3,4,5,6,7,8,9,10].map(p => {
-                const sel = mySelections.find(s => s.priority === p);
+                const sel = mySelections.find(s => s.priority === p && !s.is_alternative);
                 if (sel) {
                     return `${p}지망: ${sel.course.course_name}`;
                 } else {
@@ -1054,39 +1085,108 @@ async function confirmSelection() {
         return;
     }
 
+    // Priority conflict check (new selections only)
+    if (!editingId) {
+        const existing = mySelections.find(s => s.priority === priority && !s.is_alternative);
+        if (existing) {
+            document.getElementById('priorityConflictMessage').textContent =
+                `${priority}지망에 이미 "${existing.course.course_name}"이(가) 선택되어 있습니다. 어떻게 하시겠습니까?`;
+            pendingConflictData = {
+                existingSelection: existing,
+                newCourseId: selectedCourseForModal.id,
+                priority, prof1, prof2, prof3,
+            };
+            openModal('priorityConflictModal');
+            return;
+        }
+    }
+
     try {
         if (editingId) {
-            // Update existing selection
             await apiRequest(`/api/selections/${editingId}`, {
                 method: 'PUT',
-                body: JSON.stringify({
-                    professor_1st: prof1,
-                    professor_2nd: prof2,
-                    professor_3rd: prof3,
-                }),
+                body: JSON.stringify({ professor_1st: prof1, professor_2nd: prof2, professor_3rd: prof3 }),
             });
             delete document.getElementById('modalConfirm').dataset.editingId;
             document.getElementById('modalPriority').disabled = false;
         } else {
-            // Create new selection
             await apiRequest('/api/selections', {
                 method: 'POST',
                 body: JSON.stringify({
                     course_id: selectedCourseForModal.id,
-                    priority: priority,
+                    priority,
                     professor_1st: prof1,
                     professor_2nd: prof2,
                     professor_3rd: prof3,
                 }),
             });
         }
-
         closeModal('selectionModal');
         await loadMySelections();
         await searchCourses();
     } catch (error) {
         alert('과목 선택 중 오류가 발생했습니다: ' + error.message);
     }
+}
+
+async function handleConflictReplace() {
+    if (!pendingConflictData) return;
+    const { existingSelection, newCourseId, priority, prof1, prof2, prof3 } = pendingConflictData;
+    pendingConflictData = null;
+    closeModal('priorityConflictModal');
+    try {
+        await apiRequest(`/api/selections/${existingSelection.id}`, { method: 'DELETE' });
+        await apiRequest('/api/selections', {
+            method: 'POST',
+            body: JSON.stringify({
+                course_id: newCourseId,
+                priority,
+                professor_1st: prof1,
+                professor_2nd: prof2,
+                professor_3rd: prof3,
+            }),
+        });
+        closeModal('selectionModal');
+        await loadMySelections();
+        await searchCourses();
+    } catch (error) {
+        alert('교체 중 오류가 발생했습니다: ' + error.message);
+    }
+}
+
+async function handleConflictAddAsAlt() {
+    if (!pendingConflictData) return;
+    const { existingSelection, newCourseId, priority, prof1, prof2, prof3 } = pendingConflictData;
+    pendingConflictData = null;
+    closeModal('priorityConflictModal');
+
+    if (existingSelection.alternatives && existingSelection.alternatives.length > 0) {
+        alert(`${priority}지망에 이미 대체강의가 등록되어 있습니다.`);
+        return;
+    }
+    try {
+        await apiRequest(`/api/selections/${existingSelection.id}/alternatives`, {
+            method: 'POST',
+            body: JSON.stringify({
+                course_id: newCourseId,
+                alternative_priority: 1,
+                professor_1st: prof1,
+                professor_2nd: prof2,
+                professor_3rd: prof3,
+            }),
+        });
+        closeModal('selectionModal');
+        await loadMySelections();
+        await searchCourses();
+    } catch (error) {
+        alert('대체강의 추가 중 오류가 발생했습니다: ' + error.message);
+    }
+}
+
+function handleConflictCancel() {
+    pendingConflictData = null;
+    closeModal('priorityConflictModal');
+    // Selection modal stays open so user can change priority
 }
 
 async function openAlternativeModal(parentSelectionId, sel) {
@@ -1216,16 +1316,16 @@ function setupModalListeners() {
 
     // Alternative modal
     document.getElementById('altModalConfirm').addEventListener('click', confirmAlternative);
-    document.getElementById('altModalCancel').addEventListener('click', () => {
-        closeModal('alternativeModal');
-        selectedAltCourse = null;
-        selectedParentCourseForAlt = null;
-    });
     document.getElementById('altModalSkip').addEventListener('click', () => {
         closeModal('alternativeModal');
         selectedAltCourse = null;
         selectedParentCourseForAlt = null;
     });
+
+    // Priority conflict modal
+    document.getElementById('conflictReplaceBtn').addEventListener('click', handleConflictReplace);
+    document.getElementById('conflictAddAltBtn').addEventListener('click', handleConflictAddAsAlt);
+    document.getElementById('conflictCancelBtn').addEventListener('click', handleConflictCancel);
 
     const altSearchBtn = document.getElementById('altSearchBtn');
     if (altSearchBtn) {
